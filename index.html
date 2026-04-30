@@ -32,11 +32,11 @@
   <script type="text/babel" data-type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     const { useState, useEffect } = React;
 
-    // --- Firebase 初期化（データベース機能の準備） ---
+    // --- Firebase 初期化（Canvas環境用のおまじない） ---
     const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
     let app, auth, db;
     try {
@@ -151,7 +151,7 @@
       const [selectedTaste, setSelectedTaste] = useState(null);
       const [selectedCase, setSelectedCase] = useState(null);
 
-      // --- 追加：直接送信用のステートとデータベース認証 ---
+      // --- 直接送信用のステートとデータベース認証 ---
       const [user, setUser] = useState(null);
       const [name, setName] = useState("");
       const [contact, setContact] = useState("");
@@ -178,13 +178,9 @@
         return () => unsubscribe();
       }, []);
 
-      // 送信ボタンが押されたときの処理
+      // ★ 送信ボタンが押されたときの処理（Slack連携用にWebhookに変更）
       const handleSendDirect = async () => {
         setErrorMsg("");
-        if (!user || !db) {
-          setErrorMsg("通信エラーが発生しました。");
-          return;
-        }
         if (!name.trim()) {
           setErrorMsg("お名前を入力してください。");
           return;
@@ -192,20 +188,39 @@
         
         setIsSubmitting(true);
         try {
-          // データベース(Firestore)に診断結果と入力内容を保存する
-          const submissionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'submissions');
-          await addDoc(submissionsRef, {
-            userId: user.uid,
-            tasteId: selectedTaste.id,
+          // ==============================================================
+          // ★ 手順ステップ3で取得したWebhook URLを下の "" の中に貼り付けてください。
+          // 例: const webhookUrl = "https://hook.us1.make.com/xxxxxxxxxxxxxxx";
+          // ==============================================================
+          const webhookUrl = "https://hook.eu1.make.com/t4owxtu16pz830mbyshk1mdpoqhwoy6m"; 
+
+          // Webhook（Slack）へ送るデータの中身
+          const payload = {
             tasteName: selectedTaste.name,
             caseId: selectedCase.id,
             caseTitle: selectedCase.title,
             diagnosticTitle: diagnosticResults[selectedCase.id].title.replace('\n', ' '),
             name: name,
             contact: contact,
-            message: message,
-            createdAt: serverTimestamp()
-          });
+            message: message
+          };
+
+          // WebhookURLが設定されている場合のみ送信処理を実行
+          if (webhookUrl !== "ここにコピーしたURLを貼り付けます") {
+            const response = await fetch(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+              throw new Error("Network response was not ok");
+            }
+          } else {
+            // URLが設定されていない場合は、テストとしてコンソールに表示して完了画面に進む
+            console.log("Webhookが設定されていません。送信データ:", payload);
+          }
+
           // 送信成功でステップ5（完了画面）へ進む
           setStep(5);
           window.scrollTo(0, 0);
@@ -216,9 +231,9 @@
           setIsSubmitting(false);
         }
       };
-      // --- ここまで追加 ---
+      // --- ここまで変更 ---
 
-      // --- ここから追加：診断結果データ（36事例個別） ---
+      // --- 診断結果データ（36事例個別） ---
       const diagnosticResults = {
         // ▼ ナチュラルテイスト (N0〜N5)
         'natural-0': {
@@ -412,7 +427,6 @@
           advice: "壁の下半分に板を張る「腰壁」や、木目の美しい造作キャビネットを取り入れましょう。少しレトロなデザインのペンダントライトを吊るし、たくさんの観葉植物を飾れば理想のカフェ空間になります。"
         }
       };
-      // --- ここまで追加 ---
 
       const renderStep1 = () => (
         <div className="animate-slide-up">
@@ -506,7 +520,7 @@
             </div>
           </div>
 
-          {/* --- ここから追加：診断ボタン --- */}
+          {/* --- 診断ボタン --- */}
           <button 
             onClick={() => {
               setStep(4);
@@ -520,7 +534,6 @@
               あなたのインテリア傾向を診断する
             </span>
           </button>
-          {/* --- ここまで追加 --- */}
 
           <button 
             onClick={() => setStep(2)} 
@@ -531,7 +544,6 @@
         </div>
       );
 
-      // --- ここから変更：ステップ4（診断結果画面） ---
       const renderStep4 = () => {
         const result = diagnosticResults[selectedCase.id];
         return (
@@ -568,7 +580,7 @@
               </div>
             </div>
 
-            {/* --- ここから変更：直接送信フォームエリア --- */}
+            {/* --- 直接送信フォームエリア --- */}
             <div className="bg-white w-full rounded-3xl shadow-[0_4px_15px_rgba(0,0,0,0.05)] p-6 md:p-8 mb-8 border border-gray-100">
               <h3 className="text-[1.1rem] font-bold text-gray-800 text-center mb-2">この結果を担当者に送信する</h3>
               <p className="text-sm text-gray-500 text-center mb-6 leading-relaxed">
@@ -613,9 +625,9 @@
 
                 <button 
                   onClick={handleSendDirect}
-                  disabled={isSubmitting || !user}
+                  disabled={isSubmitting}
                   className={`w-full text-white font-bold py-3.5 px-6 rounded-full transition-all flex items-center justify-center gap-2 mt-2 ${
-                    isSubmitting || !user ? 'bg-gray-400 cursor-not-allowed shadow-sm' : 'bg-orange-500 hover:bg-orange-600 active:bg-orange-700 shadow-[0_4px_0_0_#c2410c] active:shadow-[0_0px_0_0_#c2410c] active:translate-y-1'
+                    isSubmitting ? 'bg-gray-400 cursor-not-allowed shadow-sm' : 'bg-orange-500 hover:bg-orange-600 active:bg-orange-700 shadow-[0_4px_0_0_#c2410c] active:shadow-[0_0px_0_0_#c2410c] active:translate-y-1'
                   }`}
                 >
                   {isSubmitting ? (
@@ -650,7 +662,6 @@
         );
       };
 
-      // --- ここから追加：ステップ5（送信完了画面） ---
       const renderStep5 = () => (
         <div className="animate-slide-up flex flex-col items-center pt-10 pb-6 text-center">
           <div className="bg-emerald-100 text-emerald-600 rounded-full w-24 h-24 flex items-center justify-center mb-6 shadow-sm">
@@ -676,7 +687,6 @@
           </button>
         </div>
       );
-      // --- ここまで追加 ---
 
       return (
         <div className="min-h-screen font-sans flex justify-center">
@@ -695,7 +705,6 @@
               {step === 2 && renderStep2()}
               {step === 3 && renderStep3()}
               {step === 4 && renderStep4()}
-              {/* --- ステップ5の表示を追加 --- */}
               {step === 5 && renderStep5()}
             </main>
           </div>
